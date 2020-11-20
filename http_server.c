@@ -157,6 +157,13 @@ int http_server_create(Config config) {
   } else {
     log_info("Socket successfully binded..\n");
   }
+
+  if ((listen(sockfd, 5)) != 0) {
+    log_error("Listen failed...\n");
+    return SERVER_LISTENNING_ERROR;
+  } else
+    log_info("Server listening..\n");
+
   // if this point was reached then the socket it binded and ready to connect
   return sockfd;
 }
@@ -194,16 +201,12 @@ int tcp_server_accept(int socket) {
 // connects, return the client socket file descriptor. This is a blocking
 // call. If an error occurs, return a -1.
 int http_server_accept(int socket) {
+  log_trace("Server about to listen for incoming client connections");
   // var for the socket
   int finalSockfd;
   // Variable to recognize client
   struct sockaddr_in cli;
   // Now server is ready to listen and verification
-  if ((listen(socket, 5)) != 0) {
-    log_error("Listen failed...\n");
-    return -1;
-  } else
-    log_info("Server listening..\n");
   socklen_t len = sizeof(cli);
   // Accept the data packet from client and verification
   finalSockfd = accept(socket, (struct sockaddr *)&cli, &len);
@@ -291,8 +294,9 @@ Request http_server_receive_request(int socket) {
     } else {
       timeOutCounter++;
     }
-    return http_server_parse_request(dynamicBuffer);
+
   }
+      return http_server_parse_request(dynamicBuffer);
 }
 
 // Sends the provided Response struct on the provided client socket.
@@ -304,17 +308,19 @@ int http_server_send_response(int socket, Response response) {
       snprintf(NULL, ZERO_RESET_INIT_VALUE, "%s\r\n%s: %s\r\n\r\n",
                response.status, response.headers[ZERO_RESET_INIT_VALUE]->name,
                response.headers[ZERO_RESET_INIT_VALUE]->value);
+snprintf(myHeader, headerLength + 1, "s\r\n%s: %s\r\n\r\n", response.status, response.headers[0]->name, response.headers[0]->value);
+
 
   size_t totalSentChars = headerLength;
   size_t totalBytes =
       headerLength + atoi(response.headers[ZERO_RESET_INIT_VALUE]->value);
 
 
-      int succesfullySent = ZERO_RESET_INIT_VALUE;
+      size_t succesfullySent = ZERO_RESET_INIT_VALUE;
       int justSent = ZERO_RESET_INIT_VALUE;
       while (succesfullySent < totalBytes)
       {
-        justSent = send(socket, response.headers, headerLength, NULL);
+        justSent = send(socket, response.headers, headerLength, 0);
         succesfullySent += justSent;
         if( justSent == HTTP_SERVER_BAD_SOCKET)
         {
@@ -333,7 +339,7 @@ int http_server_send_response(int socket, Response response) {
 
         while (succesfullySent < responseSize)
         {
-          justSent = send(socket, responseMem, responseSize, NULL);
+          justSent = send(socket, responseMem, responseSize, 0);
           justSent += succesfullySent;
                   if( justSent == HTTP_SERVER_BAD_SOCKET)
         {
@@ -349,7 +355,51 @@ int http_server_send_response(int socket, Response response) {
 
 // Closes the provided client socket and cleans up allocated resources.
 void http_server_client_cleanup(int socket, Request request,
-                                Response response) {}
+                                Response response) {
+int closed = close(socket);
+if(closed)
+{
+  log_error("Client cleanup could not close rthe socket properly");
+}
+log_trace("Client cleanup closed socket successfully");
+if(request.method != NULL)
+{
+  free(request.method);
+}
+if(request.path != NULL)
+{
+  free(request.path);
+}
+if(request.headers != NULL)
+{
+  for(int i = 0; i < request.num_headers; i++)
+  {
+    free(request.headers[i]->name);
+    free(request.headers[i]->value);
+    free(request.headers[i]);
+  }
+  free(request.headers);
+}
+if(response.status != NULL)
+{
+  free(response.status);
+}
+if(response.file != NULL)
+{
+  free(response.file);
+}
+if(response.headers != NULL)
+{
+  for(int i = 0; i < response.num_headers; i++)
+  {
+    free(response.headers[i]->name);
+    free(response.headers[i]->value);
+    free(response.headers[i]);
+  }
+  free(response.headers);
+}
+log_trace("Client cleanup done and exiting succesfully");
+                                }
 
 // Closes provided server socket
 void http_server_cleanup(int socket) {
@@ -532,7 +582,7 @@ Response http_server_process_request(Request request, char *relative_path) {
         malloc(sizeof(char) * (contentLen + 1));
 
     snprintf(newResponse.headers[ZERO_RESET_INIT_VALUE]->value, contentLen + 1,
-             "u", fLen);
+             "%zu", fLen);
   }
 
   return newResponse;
